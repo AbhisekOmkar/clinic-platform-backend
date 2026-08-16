@@ -43,6 +43,9 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
+    # Eval-harness support: allows POST /api/v1/admin/reset (auto-on for env=local)
+    allow_test_reset: bool = False
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
