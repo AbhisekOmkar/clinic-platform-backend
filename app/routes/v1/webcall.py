@@ -24,6 +24,7 @@ router = APIRouter(tags=["WebCall"])
 class WebCallRequest(BaseModel):
     caller_phone: str | None = None
     caller_name: str | None = None
+    agent_id: str | None = None
 
 
 @router.post("/webcall")
@@ -40,6 +41,7 @@ async def create_webcall(body: WebCallRequest):
             "direction": "web",
             "phone": phone,
             "room_name": room_name,
+            "agent_id": body.agent_id,
             "status": "in_progress",
             "started_at": datetime.utcnow(),
         }
@@ -51,6 +53,7 @@ async def create_webcall(body: WebCallRequest):
             "direction": "web",
             "phone": phone,
             "caller_name": body.caller_name,
+            "agent_id": body.agent_id,
         },
     )
     token = room_manager.mint_user_token(room_name, identity=f"caller-{call_id[:8]}")

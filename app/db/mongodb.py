@@ -39,6 +39,7 @@ def get_database() -> AsyncIOMotorDatabase:
 
 
 class Collections:
+    AGENTS = "agents"
     BRANCHES = "branches"
     PRACTITIONERS = "practitioners"
     PATIENTS = "patients"

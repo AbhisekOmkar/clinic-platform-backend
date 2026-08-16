@@ -261,6 +261,10 @@ async def seed(database_name: str | None = None, wipe: bool = False) -> None:
     )
     client.close()
 
+    from scripts.seed_agent import seed_agent
+
+    await seed_agent(database_name)
+
 
 if __name__ == "__main__":
     asyncio.run(seed(wipe="--wipe" in sys.argv))

@@ -31,6 +31,9 @@ async def create_indexes(database_name: str | None = None) -> None:
     await db.appointments.create_index([("phone", 1), ("status", 1), ("start_utc", 1)])
     await db.appointments.create_index([("pms.status", 1)])
 
+    await db.agents.create_index([("agent_id", 1)], unique=True)
+    await db.agents.create_index([("status", 1)])
+
     await db.branches.create_index([("branch_id", 1)], unique=True)
     await db.branches.create_index([("code", 1)], unique=True)
     await db.practitioners.create_index([("practitioner_id", 1)], unique=True)
