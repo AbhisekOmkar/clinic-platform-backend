@@ -1,0 +1,30 @@
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: clinic-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - clinic_mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1}).ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: .
+    container_name: clinic-backend
+    ports:
+      - "4226:4226"
+    environment:
+      MONGODB_URL: mongodb://mongodb:27017
+      PMS_BASE_URL: http://localhost:4226/pms/api/v1
+    env_file:
+      - .env
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+volumes:
+  clinic_mongo_data:
