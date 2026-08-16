@@ -33,23 +33,32 @@ class PmsSyncService:
             )
         return self._client
 
+    def _use_cliniko(self) -> bool:
+        from app.pms.cliniko_client import ClinikoClient
+
+        return settings.pms_provider.lower() == "cliniko" and ClinikoClient.configured()
+
     async def sync_booking(self, appointment: dict) -> dict:
         """Attempt the PMS write inline (so the confirmation can report sync
-        state); failures degrade to pending + background retry."""
+        state); failures degrade to pending + background retry. Target is the
+        mock PMS or a real Cliniko account depending on PMS_PROVIDER."""
         pms_state = dict(appointment.get("pms") or {"status": "pending", "attempts": 0})
-        payload = self._booking_payload(appointment)
+        # Idempotency, our side: a stored PMS id means the write already
+        # landed — retries must never create a second record.
+        if pms_state.get("pms_id"):
+            pms_state["status"] = "synced"
+            await appointment_repository.update_pms_state(appointment["appointment_id"], pms_state)
+            return pms_state
         try:
-            response = await self._get_client().post(
-                "/appointments",
-                json=payload,
-                headers={"Idempotency-Key": appointment["appointment_id"]},
-            )
-            response.raise_for_status()
-            body = response.json()
+            if self._use_cliniko():
+                pms_id = await self._cliniko_create(appointment)
+            else:
+                pms_id = await self._mock_create(appointment)
             pms_state.update(
                 {
                     "status": "synced",
-                    "pms_id": body.get("pms_id"),
+                    "provider": "cliniko" if self._use_cliniko() else "mock",
+                    "pms_id": pms_id,
                     "attempts": pms_state.get("attempts", 0) + 1,
                     "last_error": None,
                     "synced_at": datetime.utcnow().isoformat(),
@@ -71,14 +80,77 @@ class PmsSyncService:
         await appointment_repository.update_pms_state(appointment["appointment_id"], pms_state)
         return pms_state
 
+    async def _mock_create(self, appointment: dict) -> str:
+        response = await self._get_client().post(
+            "/appointments",
+            json=self._booking_payload(appointment),
+            headers={"Idempotency-Key": appointment["appointment_id"]},
+        )
+        response.raise_for_status()
+        return response.json().get("pms_id")
+
+    async def _cliniko_create(self, appointment: dict) -> str:
+        from app.pms.cliniko_client import ClinikoClient
+        from app.repositories import branch_repository, patient_repository, practitioner_repository
+
+        practitioner = await practitioner_repository.get_by_practitioner_id(
+            appointment["practitioner_id"]
+        )
+        branch = await branch_repository.get_by_branch_id(appointment["branch_id"])
+        mapping_missing = [
+            name
+            for name, value in (
+                ("practitioner.cliniko_practitioner_id", (practitioner or {}).get("cliniko_practitioner_id")),
+                ("practitioner.cliniko_appointment_type_id", (practitioner or {}).get("cliniko_appointment_type_id")),
+                ("branch.cliniko_business_id", (branch or {}).get("cliniko_business_id")),
+            )
+            if not value
+        ]
+        if mapping_missing:
+            raise RuntimeError(f"Cliniko id mapping missing: {mapping_missing} — run scripts/cliniko_link.py")
+
+        patient = await patient_repository.get_by_patient_id(appointment["patient_id"])
+        cliniko_patient_id = (patient or {}).get("cliniko_patient_id")
+        if not cliniko_patient_id:
+            cliniko_patient = await ClinikoClient.find_or_create_patient(
+                appointment["patient_name"], appointment.get("phone") or ""
+            )
+            cliniko_patient_id = cliniko_patient["id"]
+            await patient_repository.update_one(
+                {"patient_id": appointment["patient_id"]},
+                {"cliniko_patient_id": cliniko_patient_id},
+            )
+
+        starts = appointment["start_utc"]
+        ends = appointment["end_utc"]
+        starts = starts.isoformat() if isinstance(starts, datetime) else str(starts)
+        ends = ends.isoformat() if isinstance(ends, datetime) else str(ends)
+        created = await ClinikoClient.create_appointment(
+            patient_id=cliniko_patient_id,
+            practitioner_id=practitioner["cliniko_practitioner_id"],
+            business_id=branch["cliniko_business_id"],
+            appointment_type_id=practitioner["cliniko_appointment_type_id"],
+            starts_at_utc=starts + "Z" if not starts.endswith("Z") else starts,
+            ends_at_utc=ends + "Z" if not ends.endswith("Z") else ends,
+            notes=appointment.get("reason"),
+        )
+        return str(created["id"])
+
     async def sync_cancellation(self, appointment: dict, reason: str) -> None:
         try:
-            response = await self._get_client().post(
-                f"/appointments/{appointment['appointment_id']}/cancel",
-                json={"reason": reason},
-                headers={"Idempotency-Key": f"cancel-{appointment['appointment_id']}"},
-            )
-            response.raise_for_status()
+            if self._use_cliniko():
+                pms_id = (appointment.get("pms") or {}).get("pms_id")
+                if pms_id:
+                    from app.pms.cliniko_client import ClinikoClient
+
+                    await ClinikoClient.cancel_appointment(int(pms_id), reason)
+            else:
+                response = await self._get_client().post(
+                    f"/appointments/{appointment['appointment_id']}/cancel",
+                    json={"reason": reason},
+                    headers={"Idempotency-Key": f"cancel-{appointment['appointment_id']}"},
+                )
+                response.raise_for_status()
         except Exception as exc:
             # Cancellation write-backs are retried by the same loop via a
             # tombstone marker on the appointment.

@@ -9,7 +9,9 @@ publicly listed session timings and typical Apollo Clinic consult fees; slot
 grid is the standard 15-minute OPD structure (20 minutes for OB-GYN/Ortho
 with a 10-minute procedure buffer).
 
-Dermatology and General Medicine exist at BOTH branches on purpose — the
+The roster is a deliberately lean 6 doctors (matching the linked Cliniko
+account): Dermatology at BOTH branches plus GP, Paediatrics, OB-GYN and
+Orthopaedics — the
 cross-branch earliest-slot and branch triage scenarios depend on it.
 
 Note: DR. MEERA SHRIDHAR is stored in ALL CAPS deliberately; the agent must
@@ -73,7 +75,6 @@ def sched(branch_id: str, weekdays: list[int], blocks: list[dict]) -> list[dict]
 
 
 PRACTITIONERS = [
-    # ---------- Indiranagar ----------
     {
         "practitioner_id": "dr-meera-shridhar",
         "full_name": "DR. MEERA SHRIDHAR",  # deliberately ALL-CAPS (pronunciation test case)
@@ -88,19 +89,6 @@ PRACTITIONERS = [
         ),
     },
     {
-        "practitioner_id": "dr-swagata-chakrabarty",
-        "full_name": "Dr. Swagata Chakrabarty",
-        "specialty": "Dermatology",
-        "languages": ["en", "hi", "bn"],
-        "slot_minutes": 15,
-        "buffer_minutes": 5,
-        "fee_inr": 750,
-        "weekly_schedule": (
-            sched(IND, [TUE, THU], [{"start": "11:00", "end": "14:00"}, {"start": "16:30", "end": "19:30"}])
-            + sched(IND, [SAT], [{"start": "15:00", "end": "18:00"}])
-        ),
-    },
-    {
         "practitioner_id": "dr-rajendra-s",
         "full_name": "Dr. Rajendra S",
         "specialty": "General Medicine",
@@ -110,55 +98,6 @@ PRACTITIONERS = [
         "fee_inr": 600,
         "weekly_schedule": sched(
             IND, [MON, TUE, WED, THU, FRI, SAT], [{"start": "09:00", "end": "13:00"}, {"start": "17:00", "end": "21:00"}]
-        ),
-    },
-    {
-        "practitioner_id": "dr-priti-shanker",
-        "full_name": "Dr. Priti Shanker",
-        "specialty": "General Medicine",
-        "languages": ["en", "hi"],
-        "slot_minutes": 15,
-        "buffer_minutes": 0,
-        "fee_inr": 600,
-        "weekly_schedule": (
-            sched(IND, [MON, TUE, THU, FRI], [{"start": "10:00", "end": "14:00"}])
-            + sched(IND, [SUN], [{"start": "09:00", "end": "12:00"}])
-        ),
-    },
-    # ---------- HSR Layout ----------
-    {
-        "practitioner_id": "dr-bolisetty-sudhakar",
-        "full_name": "Dr. Bolisetty Sudhakar",
-        "specialty": "General Medicine",
-        "languages": ["en", "hi", "te"],
-        "slot_minutes": 15,
-        "buffer_minutes": 5,
-        "fee_inr": 700,
-        "weekly_schedule": sched(HSR, [MON, TUE, WED, THU, FRI, SAT], [{"start": "09:00", "end": "12:00"}]),
-    },
-    {
-        "practitioner_id": "dr-thara-nair",
-        "full_name": "Dr. Thara Nair K",
-        "specialty": "General Medicine",
-        "languages": ["en", "hi", "ml"],
-        "slot_minutes": 15,
-        "buffer_minutes": 0,
-        "fee_inr": 600,
-        "weekly_schedule": (
-            sched(HSR, [MON, TUE, WED, THU, FRI, SAT], [{"start": "14:00", "end": "18:00"}])
-            + sched(HSR, [SUN], [{"start": "09:00", "end": "13:00"}])
-        ),
-    },
-    {
-        "practitioner_id": "dr-poovamma-as",
-        "full_name": "Dr. Poovamma A S",
-        "specialty": "Dermatology",
-        "languages": ["en", "hi", "kn"],
-        "slot_minutes": 15,
-        "buffer_minutes": 5,
-        "fee_inr": 750,
-        "weekly_schedule": sched(
-            HSR, [MON, TUE, THU], [{"start": "10:30", "end": "13:30"}, {"start": "17:30", "end": "20:30"}]
         ),
     },
     {
@@ -208,16 +147,6 @@ PRACTITIONERS = [
         "buffer_minutes": 10,
         "fee_inr": 900,
         "weekly_schedule": sched(HSR, [TUE, THU, SAT], [{"start": "09:30", "end": "13:00"}]),
-    },
-    {
-        "practitioner_id": "dr-vishal-lahoti",
-        "full_name": "Dr. Vishal Lahoti",
-        "specialty": "Endocrinology",
-        "languages": ["en", "hi"],
-        "slot_minutes": 20,
-        "buffer_minutes": 5,
-        "fee_inr": 1000,
-        "weekly_schedule": sched(HSR, [MON, FRI], [{"start": "17:00", "end": "20:00"}]),
     },
 ]
 

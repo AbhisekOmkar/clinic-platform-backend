@@ -18,6 +18,26 @@ FastAPI + MongoDB control plane for the Apollo Clinic voice receptionist ([main 
 
 **Fees only in the policy window.** ₹250 reschedule/cancel fee applies only within 4 h of the appointment; the API returns `change_fee.applies` so the agent can mention it *only* when true.
 
+## PMS write-back: mock or real Cliniko
+
+`PMS_PROVIDER` selects the write-back target. Both share the same contract:
+a booking never fails because the PMS is down — it stays confirmed with
+`pms.status="pending"` and the retry outbox drains it idempotently.
+
+**`cliniko` (real account).** The clinic is mirrored in a live Cliniko trial
+(this project's account: two businesses = the two branches, the 6-doctor
+roster with per-branch weekly availability, per-specialty appointment types,
+patients). On booking, the backend find-or-creates the Cliniko patient
+(ids cached on our patient docs — retries and same-name callers never
+duplicate), then creates the `individual_appointment` under the mapped
+practitioner/business/appointment-type; cancellations and reschedules
+write back too. Idempotency is enforced on our side: a stored `pms_id`
+short-circuits any retry. Setup: put `CLINIKO_API_KEY` in `.env`, run
+`python scripts/cliniko_link.py` (matches our catalog to Cliniko ids by
+name), done. Availability **source of truth stays in this backend's slot
+engine** — Cliniko mirrors the schedule for records/calendar; the engine is
+what enforces grids, buffers and conflicts at booking time.
+
 ## Mock PMS (Cliniko-shaped), `/pms/api/v1`
 
 A deliberately separate "external system": own auth header (`X-PMS-Key`), own collection, own ids.

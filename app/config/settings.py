@@ -33,6 +33,16 @@ class Settings(BaseSettings):
     # Worker -> platform auth. Empty means open (local dev only).
     internal_service_key: str = ""
 
+    # PMS write-back target: "mock" (built-in Cliniko-shaped API) or "cliniko"
+    # (a real Cliniko account via its REST API)
+    pms_provider: str = "mock"
+
+    # Real Cliniko
+    cliniko_api_key: str = ""
+    # Shard comes from the API key suffix (e.g. -au4 -> api.au4.cliniko.com)
+    cliniko_base_url: str = ""
+    cliniko_user_agent: str = "Apollo Clinic Voice Agent (abhisek@usesidecar.com)"
+
     # Mock PMS
     pms_base_url: str = "http://localhost:4226/pms/api/v1"
     pms_api_key: str = "pms_test_key"

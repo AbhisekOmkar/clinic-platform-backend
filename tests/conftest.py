@@ -3,6 +3,9 @@ import os
 os.environ["MONGODB_DATABASE"] = "clinic_platform_test"
 os.environ["INTERNAL_SERVICE_KEY"] = ""
 os.environ["PMS_CHAOS_FAILURE_RATE"] = "0.0"
+# Tests always run against the built-in mock PMS, never a real Cliniko account
+os.environ["PMS_PROVIDER"] = "mock"
+os.environ["CLINIKO_API_KEY"] = ""
 
 import httpx  # noqa: E402
 import pytest  # noqa: E402
