@@ -83,16 +83,32 @@ You book, reschedule and cancel appointments. You are warm, efficient and human-
 - End the call with end_call only after a natural goodbye and the caller is done.
 """
 
+DEFAULT_CONFIGS = {
+    "stt_config": {"provider": "deepgram", "model": "nova-3", "language": "multi"},
+    "llm_config": {"provider": "openai", "model": "gpt-4.1", "temperature": 0.3},
+    "tts_config": {
+        "provider": "cartesia",
+        "model": "sonic-3",
+        "voice_id": "95d51f79-c397-46f9-b49a-23763d3eaa2d",
+        "voice_label": "Arushi — Hinglish (Cartesia)",
+        "speed": None,
+    },
+    "call_config": {
+        "allow_interruptions": True,
+        "min_endpointing_delay": 0.4,
+        "max_endpointing_delay": 5.0,
+        "enable_noise_cancellation": True,
+        "holding_phrase_after_seconds": 1.2,
+    },
+}
+
 DEFAULT_AGENT = {
     "agent_id": "asha-default",
     "name": "Asha",
     "description": "Default bilingual (EN/HI) receptionist for Apollo Clinic Bengaluru",
     "base_prompt": ASHA_PROMPT,
     "opening_line": None,  # worker picks context-aware openings (resume/callback/returning)
-    "voice_id": "95d51f79-c397-46f9-b49a-23763d3eaa2d",
-    "voice_label": "Arushi — Hinglish (Cartesia)",
-    "llm_model": "gpt-4.1",
-    "temperature": 0.3,
+    **DEFAULT_CONFIGS,
     "status": "active",
 }
 
@@ -103,8 +119,29 @@ async def seed_agent(database_name: str | None = None) -> None:
     now = datetime.utcnow()
     existing = await db.agents.find_one({"agent_id": DEFAULT_AGENT["agent_id"], "deleted_at": None})
     if existing:
-        # Never clobber dashboard edits; only ensure one exists.
-        print("Default agent already present — leaving it untouched")
+        # Never clobber dashboard edits — only backfill missing config blocks
+        # (upgrades pre-nested-config documents in place).
+        missing = {k: v for k, v in DEFAULT_CONFIGS.items() if k not in existing}
+        if missing:
+            if "voice_id" in existing and "tts_config" in missing:
+                missing["tts_config"] = {
+                    **DEFAULT_CONFIGS["tts_config"],
+                    "voice_id": existing["voice_id"],
+                    "voice_label": existing.get("voice_label"),
+                }
+            if "llm_model" in existing and "llm_config" in missing:
+                missing["llm_config"] = {
+                    **DEFAULT_CONFIGS["llm_config"],
+                    "model": existing["llm_model"],
+                    "temperature": existing.get("temperature", 0.3),
+                }
+            await db.agents.update_one(
+                {"agent_id": existing["agent_id"]},
+                {"$set": {**missing, "updated_at": now}},
+            )
+            print(f"Default agent upgraded with config blocks: {sorted(missing)}")
+        else:
+            print("Default agent already present — leaving it untouched")
     else:
         await db.agents.insert_one({**DEFAULT_AGENT, "created_at": now, "deleted_at": None})
         print("Seeded default agent 'Asha' (active)")

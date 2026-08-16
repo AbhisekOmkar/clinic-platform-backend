@@ -37,15 +37,43 @@ class AgentRepository(BaseRepository):
 agent_repository = AgentRepository()
 
 
+class SttConfig(BaseModel):
+    provider: str = Field("deepgram", pattern="^(deepgram|openai)$")
+    model: str = "nova-3"
+    language: str = Field("multi", description="deepgram language mode: multi|en|hi (openai ignores)")
+
+
+class LlmConfig(BaseModel):
+    provider: str = Field("openai", pattern="^(openai|azure)$")
+    model: str = "gpt-4.1"
+    temperature: float = Field(0.3, ge=0.0, le=1.0)
+
+
+class TtsConfig(BaseModel):
+    provider: str = Field("cartesia", pattern="^(cartesia|openai)$")
+    model: str = "sonic-3"
+    voice_id: str = "95d51f79-c397-46f9-b49a-23763d3eaa2d"
+    voice_label: str | None = None
+    speed: float | None = Field(None, ge=0.5, le=2.0)
+
+
+class CallConfig(BaseModel):
+    allow_interruptions: bool = True
+    min_endpointing_delay: float = Field(0.4, ge=0.1, le=3.0)
+    max_endpointing_delay: float = Field(5.0, ge=1.0, le=15.0)
+    enable_noise_cancellation: bool = True
+    holding_phrase_after_seconds: float = Field(1.2, ge=0.3, le=5.0)
+
+
 class AgentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=60)
     description: str | None = None
     base_prompt: str = Field(..., min_length=20, description="Full system prompt (persona + policy)")
     opening_line: str | None = Field(None, description="Spoken greeting; empty = worker default")
-    voice_id: str = Field(..., description="Cartesia voice id")
-    voice_label: str | None = None
-    llm_model: str = "gpt-4.1"
-    temperature: float = Field(0.3, ge=0.0, le=1.0)
+    stt_config: SttConfig = Field(default_factory=SttConfig)
+    llm_config: LlmConfig = Field(default_factory=LlmConfig)
+    tts_config: TtsConfig = Field(default_factory=TtsConfig)
+    call_config: CallConfig = Field(default_factory=CallConfig)
 
 
 class AgentUpdate(BaseModel):
@@ -53,10 +81,10 @@ class AgentUpdate(BaseModel):
     description: str | None = None
     base_prompt: str | None = Field(None, min_length=20)
     opening_line: str | None = None
-    voice_id: str | None = None
-    voice_label: str | None = None
-    llm_model: str | None = None
-    temperature: float | None = Field(None, ge=0.0, le=1.0)
+    stt_config: SttConfig | None = None
+    llm_config: LlmConfig | None = None
+    tts_config: TtsConfig | None = None
+    call_config: CallConfig | None = None
 
 
 @router.get("")

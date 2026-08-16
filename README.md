@@ -35,7 +35,7 @@ A deliberately separate "external system": own auth header (`X-PMS-Key`), own co
 
 ## API surface (`/api/v1`)
 
-`branches` · `practitioners` · `specialties` · `availability` (grid−bookings−buffers, weekday/window/near-time filters, `scope=earliest` across all practitioners+branches, always fresh with `as_of`) · `appointments` (book / reschedule / cancel / list / get) · `agent/call-context` · `call-sessions` · `outbound-calls` · `followups` · `calls` + transcripts · `call-latency-metrics` · `webcall` (room + token + agent dispatch) · `admin/reset` (eval isolation; local-only). Worker auth via `X-Internal-Service-Key` when set.
+`agents` (personas: prompt/STT/LLM/TTS/call-behaviour configs, single-active) · `branches` · `practitioners` · `specialties` · `availability` (grid−bookings−buffers, weekday/window/near-time filters, `scope=earliest` across all practitioners+branches, always fresh with `as_of`) · `appointments` (book / reschedule / cancel / list / get) · `agent/call-context` · `call-sessions` · `outbound-calls` · `followups` · `calls` + transcripts · `call-latency-metrics` · `webcall` (room + token + agent dispatch) · `admin/reset` (eval isolation; local-only). Worker auth via `X-Internal-Service-Key` when set.
 
 ## Run
 
