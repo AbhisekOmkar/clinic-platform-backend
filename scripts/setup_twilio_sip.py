@@ -54,7 +54,16 @@ def twilio_env() -> tuple[str, str, str]:
 
 
 def sip_host() -> str:
+    # LiveKit Cloud assigns each project a dedicated SIP subdomain that is
+    # only shown in the dashboard (Settings -> SIP URI). It is NOT the wss
+    # subdomain — set LIVEKIT_SIP_HOST (or pass as argv[1]) with that value,
+    # e.g. "abc1def23gh.sip.livekit.cloud".
+    override = (sys.argv[1] if len(sys.argv) > 1 else "") or os.environ.get("LIVEKIT_SIP_HOST", "")
+    if override:
+        return re.sub(r"^sip:", "", override.strip()).split(";")[0]
     subdomain = re.sub(r"^wss?://", "", settings.livekit_url).split(".")[0]
+    print(f"WARNING: LIVEKIT_SIP_HOST not set — guessing {subdomain}.sip.livekit.cloud "
+          "(LiveKit Cloud usually needs the dashboard's SIP URI instead)")
     return f"{subdomain}.sip.livekit.cloud"
 
 
@@ -76,7 +85,16 @@ async def setup_twilio(client: httpx.AsyncClient, number: str) -> None:
     urls = (
         await client.get(f"https://trunking.twilio.com/v1/Trunks/{trunk_sid}/OriginationUrls")
     ).json()["origination_urls"]
-    if not any(u["sip_url"] == origination_uri for u in urls):
+    if any(u["sip_url"] == origination_uri for u in urls):
+        print(f"twilio: origination already -> {origination_uri}")
+    else:
+        # Drop stale origination URLs (e.g. a previously-guessed host) so the
+        # trunk always points at exactly one LiveKit endpoint.
+        for stale in urls:
+            await client.delete(
+                f"https://trunking.twilio.com/v1/Trunks/{trunk_sid}/OriginationUrls/{stale['sid']}"
+            )
+            print(f"twilio: removed stale origination {stale['sip_url']}")
         response = await client.post(
             f"https://trunking.twilio.com/v1/Trunks/{trunk_sid}/OriginationUrls",
             data={
@@ -89,8 +107,6 @@ async def setup_twilio(client: httpx.AsyncClient, number: str) -> None:
         )
         response.raise_for_status()
         print(f"twilio: origination -> {origination_uri}")
-    else:
-        print(f"twilio: origination already -> {origination_uri}")
 
     numbers = (
         await client.get("https://api.twilio.com/2010-04-01/Accounts/"
