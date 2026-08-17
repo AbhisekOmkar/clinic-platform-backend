@@ -65,5 +65,48 @@ class RoomManager:
         finally:
             await lk.aclose()
 
+    _outbound_trunk_id: str | None = None
+
+    async def outbound_trunk_id(self) -> str:
+        """Resolve (and cache) the provisioned PSTN outbound trunk by name."""
+        if self._outbound_trunk_id:
+            return self._outbound_trunk_id
+        from livekit.protocol import sip as sip_proto
+
+        lk = self._api()
+        try:
+            trunks = await lk.sip.list_sip_outbound_trunk(sip_proto.ListSIPOutboundTrunkRequest())
+            trunk = next(
+                (t for t in trunks.items if t.name == "clinic-outbound-twilio"), None
+            )
+            if trunk is None:
+                raise RuntimeError(
+                    "No outbound SIP trunk 'clinic-outbound-twilio' — run scripts/setup_twilio_sip.py"
+                )
+            self._outbound_trunk_id = trunk.sip_trunk_id
+            return self._outbound_trunk_id
+        finally:
+            await lk.aclose()
+
+    async def dial_out(self, room_name: str, to_number: str, identity: str) -> str:
+        """Add a PSTN participant to the room (rings the patient's phone)."""
+        trunk_id = await self.outbound_trunk_id()
+        lk = self._api()
+        try:
+            participant = await lk.sip.create_sip_participant(
+                api.CreateSIPParticipantRequest(
+                    sip_trunk_id=trunk_id,
+                    sip_call_to=to_number,
+                    room_name=room_name,
+                    participant_identity=identity,
+                    participant_name="patient",
+                    krisp_enabled=True,
+                )
+            )
+            logger.info(f"Dialing {to_number} into {room_name} (sip_call_id={participant.sip_call_id})")
+            return participant.sip_call_id
+        finally:
+            await lk.aclose()
+
 
 room_manager = RoomManager()

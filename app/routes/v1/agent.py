@@ -107,3 +107,79 @@ class OutboundStatusUpdate(BaseModel):
 async def update_outbound_call(outbound_id: str, body: OutboundStatusUpdate):
     await outbound_call_repository.mark_status(outbound_id, body.status)
     return {"ok": True}
+
+
+class DialMeRequest(BaseModel):
+    phone: str
+    purpose: str | None = Field(
+        None, description="What the agent should say it's calling about"
+    )
+
+
+@router.post("/dial-me")
+async def dial_me(body: DialMeRequest):
+    """Place a REAL outbound phone call: the clinic agent rings the number
+    and speaks when answered. Also records the attempt so an unanswered call
+    becomes a recognisable callback when the patient rings back."""
+    import uuid as _uuid
+    from datetime import datetime as _dt
+
+    from fastapi import HTTPException
+
+    from app.communication.room_manager import room_manager
+    from app.config.settings import settings
+    from app.repositories import call_repository
+
+    phone = normalize_phone(body.phone)
+    if not phone or not phone.startswith("+"):
+        raise HTTPException(status_code=422, detail="A valid phone number is required (E.164, e.g. +91...)")
+    if not settings.livekit_url:
+        raise HTTPException(status_code=503, detail="LiveKit is not configured")
+
+    call_id = str(_uuid.uuid4())
+    room_name = f"outbound-{call_id[:8]}"
+    purpose = body.purpose or "a quick demo call from the clinic's AI receptionist"
+
+    outbound = {
+        "outbound_id": str(_uuid.uuid4()),
+        "phone": phone,
+        "purpose": purpose,
+        "context": {"source": "dial-me"},
+        "status": "initiated",
+        "created_at": _dt.utcnow(),
+    }
+    await outbound_call_repository.insert_one(dict(outbound))
+    await call_repository.insert_one(
+        {
+            "call_id": call_id,
+            "direction": "outbound",
+            "phone": phone,
+            "room_name": room_name,
+            "status": "in_progress",
+            "started_at": _dt.utcnow(),
+        }
+    )
+    try:
+        await room_manager.create_room_with_agent(
+            room_name,
+            {
+                "call_id": call_id,
+                "direction": "outbound",
+                "phone": phone,
+                "outbound_id": outbound["outbound_id"],
+                "purpose": purpose,
+            },
+        )
+        sip_call_id = await room_manager.dial_out(room_name, phone, identity=f"phone-{call_id[:8]}")
+    except Exception as exc:
+        await call_repository.update_one({"call_id": call_id}, {"status": "failed"})
+        await outbound_call_repository.mark_status(outbound["outbound_id"], "no_answer")
+        await room_manager.delete_room(room_name)
+        raise HTTPException(status_code=502, detail=f"Could not place the call: {str(exc)[:200]}")
+
+    return {
+        "call_id": call_id,
+        "room_name": room_name,
+        "sip_call_id": sip_call_id,
+        "dialing": phone,
+    }

@@ -127,6 +127,105 @@ async def setup_twilio(client: httpx.AsyncClient, number: str) -> None:
         print(f"twilio: {number} already attached")
 
 
+TERMINATION_DOMAIN_PREFIX = "clinic-voice-intelliax"
+SIP_CRED_USERNAME = "clinicvoice"
+SIP_CRED_PASSWORD = "ClinicVoice2026Lk"
+LK_OUTBOUND_NAME = "clinic-outbound-twilio"
+
+
+async def setup_twilio_termination(client: httpx.AsyncClient) -> str:
+    """Enable outbound: give the trunk a termination domain + SIP credentials.
+    Returns the termination address LiveKit should dial."""
+    sid = os.environ["TWILIO_ACCOUNT_SID"]
+    trunks = (await client.get("https://trunking.twilio.com/v1/Trunks")).json()["trunks"]
+    trunk = next(t for t in trunks if t["friendly_name"] == TRUNK_NAME)
+    trunk_sid = trunk["sid"]
+
+    domain = trunk.get("domain_name")
+    if not domain:
+        for suffix in ("", "-1", "-2"):
+            candidate = f"{TERMINATION_DOMAIN_PREFIX}{suffix}.pstn.twilio.com"
+            response = await client.post(
+                f"https://trunking.twilio.com/v1/Trunks/{trunk_sid}",
+                data={"DomainName": candidate},
+            )
+            if response.status_code < 400:
+                domain = candidate
+                print(f"twilio: termination domain -> {domain}")
+                break
+            print(f"twilio: domain {candidate} rejected ({response.status_code})")
+        if not domain:
+            raise SystemExit("could not set a termination domain")
+    else:
+        print(f"twilio: termination domain already {domain}")
+
+    lists = (
+        await client.get(
+            f"https://api.twilio.com/2010-04-01/Accounts/{sid}/SIP/CredentialLists.json"
+        )
+    ).json()["credential_lists"]
+    cred_list = next((c for c in lists if c["friendly_name"] == "clinic-livekit-creds"), None)
+    if cred_list is None:
+        response = await client.post(
+            f"https://api.twilio.com/2010-04-01/Accounts/{sid}/SIP/CredentialLists.json",
+            data={"FriendlyName": "clinic-livekit-creds"},
+        )
+        response.raise_for_status()
+        cred_list = response.json()
+        print("twilio: created credential list")
+    creds = (
+        await client.get(
+            f"https://api.twilio.com/2010-04-01/Accounts/{sid}/SIP/CredentialLists/{cred_list['sid']}/Credentials.json"
+        )
+    ).json()["credentials"]
+    if not any(c["username"] == SIP_CRED_USERNAME for c in creds):
+        response = await client.post(
+            f"https://api.twilio.com/2010-04-01/Accounts/{sid}/SIP/CredentialLists/{cred_list['sid']}/Credentials.json",
+            data={"Username": SIP_CRED_USERNAME, "Password": SIP_CRED_PASSWORD},
+        )
+        response.raise_for_status()
+        print(f"twilio: credential '{SIP_CRED_USERNAME}' added")
+    attached = (
+        await client.get(f"https://trunking.twilio.com/v1/Trunks/{trunk_sid}/CredentialLists")
+    ).json()["credential_lists"]
+    if not any(a["sid"] == cred_list["sid"] for a in attached):
+        response = await client.post(
+            f"https://trunking.twilio.com/v1/Trunks/{trunk_sid}/CredentialLists",
+            data={"CredentialListSid": cred_list["sid"]},
+        )
+        response.raise_for_status()
+        print("twilio: credential list attached to trunk termination")
+    return domain
+
+
+async def setup_livekit_outbound(termination_domain: str, number: str) -> None:
+    lk = api.LiveKitAPI(
+        settings.livekit_url.replace("wss://", "https://"),
+        settings.livekit_api_key,
+        settings.livekit_api_secret,
+    )
+    try:
+        trunks = await lk.sip.list_sip_outbound_trunk(sip_proto.ListSIPOutboundTrunkRequest())
+        existing = next((t for t in trunks.items if t.name == LK_OUTBOUND_NAME), None)
+        if existing:
+            print(f"livekit: outbound trunk exists {existing.sip_trunk_id} -> {existing.address}")
+            return
+        trunk = await lk.sip.create_sip_outbound_trunk(
+            sip_proto.CreateSIPOutboundTrunkRequest(
+                trunk=sip_proto.SIPOutboundTrunkInfo(
+                    name=LK_OUTBOUND_NAME,
+                    address=termination_domain,
+                    numbers=[number],
+                    auth_username=SIP_CRED_USERNAME,
+                    auth_password=SIP_CRED_PASSWORD,
+                )
+            )
+        )
+        print(f"livekit: outbound trunk {trunk.sip_trunk_id} -> {termination_domain}")
+    finally:
+        await lk.aclose()
+
+
 async def setup_livekit(number: str) -> None:
     lk = api.LiveKitAPI(
         settings.livekit_url.replace("wss://", "https://"),
@@ -185,8 +284,11 @@ async def main() -> None:
     auth = base64.b64encode(f"{sid}:{token}".encode()).decode()
     async with httpx.AsyncClient(headers={"Authorization": f"Basic {auth}"}, timeout=30) as client:
         await setup_twilio(client, number)
+        termination_domain = await setup_twilio_termination(client)
     await setup_livekit(number)
-    print(f"\nDone. Calls to {number} now ring the clinic agent (rooms '{ROOM_PREFIX}-*').")
+    await setup_livekit_outbound(termination_domain, number)
+    print(f"\nDone. Inbound: calls to {number} ring the clinic agent (rooms '{ROOM_PREFIX}-*').")
+    print("Outbound: the backend's /api/v1/dial-me places agent calls via the outbound trunk.")
 
 
 if __name__ == "__main__":
